@@ -9,7 +9,7 @@
 | Phase | Status | Description |
 |---|---|---|
 | Phase 0 | ✅ Completed | Project Infrastructure & Documentation |
-| Phase 1 | ⬜ Not Started | Supabase Backend |
+| Phase 1 | 🔄 In Progress | Supabase Backend |
 | Phase 2 | ⬜ Not Started | Flutter Core |
 | Phase 3 | ⬜ Not Started | Flutter Social Features |
 | Phase 4 | ⬜ Not Started | Next.js Web Quiz |
