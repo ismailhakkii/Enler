@@ -6,16 +6,58 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../data/auth_repository.dart';
+import '../../profile/data/profile_repository.dart';
 
 /// Welcome / login screen.
 ///
 /// Displays the brand logo, tagline, animated emoji, and auth options
 /// (Google, Apple, Guest) following the Soft Aurora design language.
-class AuthScreen extends ConsumerWidget {
+class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends ConsumerState<AuthScreen> {
+  bool _isLoading = false;
+
+  Future<void> _handleSignIn(Future<bool> Function() signInMethod) async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    try {
+      await signInMethod();
+      // Auth state listener in router will handle navigation
+      // But as fallback, listen for auth changes
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        final profileRepo = ref.read(profileRepositoryProvider);
+        final profile = await profileRepo.getProfileByUserId(user.id);
+        if (!mounted) return;
+        if (profile != null) {
+          context.go(AppRoutes.home);
+        } else {
+          context.go(AppRoutes.profileCreate);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Giriş yapılamadı: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -69,10 +111,10 @@ class AuthScreen extends ConsumerWidget {
                     backgroundColor: AppColors.surface,
                     foregroundColor: AppColors.textPrimary,
                     shadow: true,
-                    onTap: () {
-                      // TODO: Call Google sign-in provider
-                      // ref.read(authControllerProvider.notifier).signInWithGoogle();
-                      context.go(AppRoutes.profileCreate);
+                    onTap: _isLoading ? () {} : () {
+                      _handleSignIn(
+                        ref.read(authRepositoryProvider).signInWithGoogle,
+                      );
                     },
                   )
                       .animate()
@@ -86,10 +128,10 @@ class AuthScreen extends ConsumerWidget {
                     icon: Icons.apple_rounded,
                     backgroundColor: AppColors.textPrimary,
                     foregroundColor: AppColors.textOnPrimary,
-                    onTap: () {
-                      // TODO: Call Apple sign-in provider
-                      // ref.read(authControllerProvider.notifier).signInWithApple();
-                      context.go(AppRoutes.profileCreate);
+                    onTap: _isLoading ? () {} : () {
+                      _handleSignIn(
+                        ref.read(authRepositoryProvider).signInWithApple,
+                      );
                     },
                   )
                       .animate()
@@ -129,9 +171,7 @@ class AuthScreen extends ConsumerWidget {
                     width: double.infinity,
                     height: 52,
                     child: OutlinedButton(
-                      onPressed: () {
-                        // TODO: Call anonymous sign-in provider
-                        // ref.read(authControllerProvider.notifier).signInAnonymously();
+                      onPressed: _isLoading ? null : () {
                         context.go(AppRoutes.profileCreate);
                       },
                       style: OutlinedButton.styleFrom(
