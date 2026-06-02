@@ -10,6 +10,7 @@ import '../../../features/profile/presentation/profile_screen.dart';
 import '../../../features/profile/presentation/profile_create_screen.dart';
 import '../../../features/profile/presentation/profile_edit_screen.dart';
 import '../../../features/quiz/presentation/question_add_screen.dart';
+import '../../../features/quiz/presentation/result_screen.dart';
 import '../../../features/leaderboard/presentation/leaderboard_screen.dart';
 import '../../../features/settings/presentation/settings_screen.dart';
 
@@ -100,6 +101,10 @@ GoRouter appRouter(Ref ref) {
       GoRoute(
         path: AppRoutes.settings,
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.result,
+        builder: (context, state) => const ResultScreen(),
       ),
     ],
   );

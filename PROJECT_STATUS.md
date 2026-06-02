@@ -1,16 +1,16 @@
 # Enler — Project Status
 
 > Last updated: 2026-06-03
-> Current phase: Phase 0 — ✅ COMPLETED
-> Next phase: Phase 1 — Supabase Backend
+> Current phase: Phase 2 — Flutter Core (In Progress)
+> Branch: phase/1-supabase-backend
 
 ## Phase Overview
 
 | Phase | Status | Description |
 |---|---|---|
 | Phase 0 | ✅ Completed | Project Infrastructure & Documentation |
-| Phase 1 | 🔄 In Progress | Supabase Backend |
-| Phase 2 | ⬜ Not Started | Flutter Core |
+| Phase 1 | ✅ Completed | Supabase Backend |
+| Phase 2 | 🔄 In Progress | Flutter Core |
 | Phase 3 | ⬜ Not Started | Flutter Social Features |
 | Phase 4 | ⬜ Not Started | Next.js Web Quiz |
 | Phase 5 | ⬜ Not Started | AI Wrong Answer Generation |
