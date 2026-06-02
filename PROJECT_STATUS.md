@@ -1,14 +1,14 @@
 # Enler — Project Status
 
 > Last updated: 2026-06-03
-> Current phase: Phase 0 — Project Infrastructure & Documentation
-> Current task: 0.1 — Creating project files
+> Current phase: Phase 0 — ✅ COMPLETED
+> Next phase: Phase 1 — Supabase Backend
 
 ## Phase Overview
 
 | Phase | Status | Description |
 |---|---|---|
-| Phase 0 | 🔄 In Progress | Project Infrastructure & Documentation |
+| Phase 0 | ✅ Completed | Project Infrastructure & Documentation |
 | Phase 1 | ⬜ Not Started | Supabase Backend |
 | Phase 2 | ⬜ Not Started | Flutter Core |
 | Phase 3 | ⬜ Not Started | Flutter Social Features |
@@ -22,23 +22,24 @@
 ## Phase 0 Tasks
 
 - [x] 0.1 PROJECT_STATUS.md
-- [ ] 0.2 .gemini/rules.md
-- [ ] 0.3 .cursor/rules/
-- [ ] 0.4 docs/ARCHITECTURE.md
-- [ ] 0.5 docs/DESIGN_SYSTEM.md
-- [ ] 0.6 docs/DATABASE_SCHEMA.md
-- [ ] 0.7 docs/API_SPEC.md
-- [ ] 0.8 docs/ROADMAP.md
-- [ ] 0.9 docs/APP_STORE_CHECKLIST.md
-- [ ] 0.10 docs/TESTING_STRATEGY.md
+- [x] 0.2 .gemini/rules.md
+- [x] 0.3 .cursor/rules/ (project, flutter, nextjs, supabase)
+- [x] 0.4 docs/ARCHITECTURE.md
+- [x] 0.5 docs/DESIGN_SYSTEM.md
+- [x] 0.6 docs/DATABASE_SCHEMA.md
+- [x] 0.7 docs/API_SPEC.md
+- [x] 0.8 docs/ROADMAP.md
+- [x] 0.9 docs/APP_STORE_CHECKLIST.md
+- [x] 0.10 docs/TESTING_STRATEGY.md
 - [x] 0.11 README.md
 - [x] 0.12 .gitignore
-- [ ] 0.13 Git init + first commit
+- [x] 0.13 Git init + first commit
 - [x] 0.14 CONTRIBUTING.md
 - [x] 0.15 LICENSE
 
 ## Recent Changes
 
+- 2026-06-03: Phase 0 completed — all 18 files created, git initialized
 - 2026-06-03: Project initialized
 
 ## Known Issues / Blockers
@@ -47,4 +48,4 @@
 
 ## Next Action
 
-> Complete Phase 0 documentation files
+> Start Phase 1: Supabase Backend — Create database tables, RLS policies, Edge Functions
