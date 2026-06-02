@@ -1,0 +1,81 @@
+-- ============================================================================
+-- Seed Data: Hazır Soru Havuzu (Predefined Question Pool)
+-- Description: 50+ Turkish quiz questions across 6 categories
+-- Usage: These questions are used in the app's question picker UI.
+--        Users select questions from this pool instead of writing from scratch.
+-- Note: This is NOT inserted into the database directly — it's used as
+--        reference data in the Flutter app and Next.js web app.
+-- ============================================================================
+
+-- This file serves as the source of truth for the predefined question pool.
+-- The actual data will be embedded in the Flutter app as a Dart constant
+-- and in the Next.js app as a TypeScript constant.
+
+-- ============================================================================
+-- CATEGORIES & QUESTIONS
+-- ============================================================================
+
+-- 🎬 Film & Dizi (favorite_movie)
+-- 1. En sevdiğin film?
+-- 2. En sevdiğin dizi?
+-- 3. En sevdiğin film karakteri?
+-- 4. En son izlediğin film?
+-- 5. En sevdiğin film türü?
+-- 6. En çok ağladığın film?
+-- 7. En sevdiğin animasyon film?
+-- 8. En sevdiğin süper kahraman?
+
+-- 🎵 Müzik (favorite_music)
+-- 9. En sevdiğin sanatçı?
+-- 10. En sevdiğin şarkı?
+-- 11. En sevdiğin müzik türü?
+-- 12. En sevdiğin müzik aleti?
+-- 13. En çok dinlediğin şarkı?
+-- 14. Hayatının film müziği hangi şarkı olurdu?
+
+-- 🍕 Yemek & İçecek (favorite_food)
+-- 15. En sevdiğin yemek?
+-- 16. En sevdiğin tatlı?
+-- 17. En sevdiğin içecek?
+-- 18. En sevdiğin fast food?
+-- 19. En sevdiğin meyve?
+-- 20. En sevdiğin atıştırmalık?
+-- 21. Asla yemeyeceğin yemek?
+-- 22. En sevdiğin kahvaltılık?
+
+-- ✈️ Seyahat & Yerler (favorite_place)
+-- 23. En gitmek istediğin ülke?
+-- 24. En sevdiğin şehir?
+-- 25. En sevdiğin tatil türü? (deniz, dağ, kamp, şehir)
+-- 26. En çok gitmek istediğin şehir?
+-- 27. En sevdiğin mevsim?
+
+-- 🎮 Hobi & Eğlence (favorite_hobby)
+-- 28. En sevdiğin oyun?
+-- 29. En sevdiğin spor?
+-- 30. En sevdiğin takım?
+-- 31. Boş zamanında ne yaparsın?
+-- 32. En sevdiğin sosyal medya platformu?
+-- 33. En sevdiğin süper güç?
+-- 34. En sevdiğin hayvan?
+-- 35. En sevdiğin renk?
+-- 36. En sevdiğin emoji?
+-- 37. En sevdiğin kitap?
+-- 38. En sevdiğin bilgisayar/telefon oyunu?
+
+-- 💡 Kişilik & Hayaller (personality / dream)
+-- 39. En büyük hayalin?
+-- 40. En çok korktuğun şey?
+-- 41. En utandığın an?
+-- 42. Kendini 3 kelimeyle anlat?
+-- 43. Sabah insanı mı gece insanı mı?
+-- 44. Kedi mi köpek mi?
+-- 45. Yaz mı kış mı?
+-- 46. Çay mı kahve mi?
+-- 47. Deniz mi dağ mı?
+-- 48. Tek başına mı arkadaşlarla mı?
+-- 49. Pizza mı hamburger mi?
+-- 50. En sevdiğin gün hangisi?
+-- 51. Pişman olduğun bir şey?
+-- 52. Zaman makinesi olsa nereye giderdin?
+-- 53. Bir gün başkan olsan ilk ne yapardın?
