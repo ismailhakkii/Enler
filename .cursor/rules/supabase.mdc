@@ -1,0 +1,412 @@
+---
+description: Supabase database and backend rules for Enler. Covers migrations, RLS policies, Edge Functions, naming, and security.
+globs: supabase/**/*
+---
+
+# Enler — Supabase Standards
+
+## Directory Structure
+```
+supabase/
+├── config.toml                          # Supabase CLI project config
+├── migrations/                          # SQL migration files
+│   ├── 20260601000000_create_profiles.sql
+│   ├── 20260601000001_create_categories.sql
+│   ├── 20260601000002_create_questions.sql
+│   └── ...
+├── functions/                           # Edge Functions (Deno/TypeScript)
+│   ├── generate-choices/
+│   │   └── index.ts
+│   ├── calculate-score/
+│   │   └── index.ts
+│   ├── create-quiz-session/
+│   │   └── index.ts
+│   └── _shared/                         # Shared code across functions
+│       ├── supabase-client.ts
+│       ├── cors.ts
+│       └── types.ts
+├── seed.sql                             # Development seed data
+└── tests/                               # Database & function tests
+    ├── rls_policies_test.sql            # pgTAP RLS tests
+    └── functions/                        # Edge Function tests
+```
+
+## Migration Rules
+
+### File Naming
+- Format: `YYYYMMDDHHMMSS_short_description.sql`
+- Use present tense verbs: `create_`, `add_`, `alter_`, `drop_`
+- Examples:
+  - `20260601000000_create_profiles.sql`
+  - `20260601000001_add_avatar_url_to_profiles.sql`
+  - `20260602000000_create_quiz_sessions.sql`
+
+### Migration Template
+```sql
+-- Migration: Create profiles table
+-- Description: User profiles linked to auth.users
+
+-- =============================================================
+-- TABLE
+-- =============================================================
+CREATE TABLE public.profiles (
+  id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username    TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  avatar_url  TEXT,
+  bio         TEXT,
+  quiz_count  INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =============================================================
+-- INDEXES
+-- =============================================================
+CREATE INDEX idx_profiles_username ON public.profiles(username);
+
+-- =============================================================
+-- ROW LEVEL SECURITY
+-- =============================================================
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Users can read any profile
+CREATE POLICY "Profiles are publicly readable"
+  ON public.profiles
+  FOR SELECT
+  USING (true);
+
+-- Users can only update their own profile
+CREATE POLICY "Users can update own profile"
+  ON public.profiles
+  FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- Users can insert their own profile
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles
+  FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- =============================================================
+-- TRIGGERS
+-- =============================================================
+-- Auto-update updated_at
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_updated_at();
+
+-- =============================================================
+-- COMMENTS
+-- =============================================================
+COMMENT ON TABLE public.profiles IS 'User profiles linked to Supabase Auth';
+COMMENT ON COLUMN public.profiles.quiz_count IS 'Denormalized count of quizzes created';
+```
+
+### Rules
+1. **Every migration is idempotent-safe** — never assume state; add `IF NOT EXISTS` where supported.
+2. **Every `CREATE TABLE` must be immediately followed by:**
+   - `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`
+   - At least one policy (even if it's deny-all initially).
+3. **Always add indexes on:**
+   - Foreign key columns
+   - Columns used in WHERE/ORDER BY clauses
+   - Unique constraints
+4. **Use `gen_random_uuid()`** for UUID primary keys (not `uuid_generate_v4()`).
+5. **Every table must have:**
+   - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+   - `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` (with trigger)
+6. **Add `COMMENT ON`** for tables and non-obvious columns.
+7. **One logical change per migration** — don't bundle unrelated table creates.
+8. **Never modify existing migrations** — create new ones for schema changes.
+
+## Row Level Security (RLS)
+
+### Design Principles
+- **Default DENY** — if no policy matches, the operation is denied.
+- **Least privilege** — grant only what's needed.
+- **Use `auth.uid()`** to identify the current user.
+- **Separate policies per operation** — don't combine SELECT + UPDATE in one policy.
+
+### Common Patterns
+
+#### Public Read, Owner Write
+```sql
+-- Anyone can read
+CREATE POLICY "select_public" ON public.table_name
+  FOR SELECT USING (true);
+
+-- Only owner can insert
+CREATE POLICY "insert_owner" ON public.table_name
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Only owner can update
+CREATE POLICY "update_owner" ON public.table_name
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Only owner can delete
+CREATE POLICY "delete_owner" ON public.table_name
+  FOR DELETE USING (auth.uid() = user_id);
+```
+
+#### Friends-Only Access
+```sql
+CREATE POLICY "select_friends" ON public.table_name
+  FOR SELECT USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.friendships
+      WHERE (user_id_1 = auth.uid() AND user_id_2 = table_name.user_id
+        OR user_id_2 = auth.uid() AND user_id_1 = table_name.user_id)
+      AND status = 'accepted'
+    )
+  );
+```
+
+#### Server-Only Write (Edge Functions)
+```sql
+-- No client-side insert/update/delete policies
+-- Edge Functions use the service_role key to bypass RLS
+CREATE POLICY "select_own_scores" ON public.quiz_scores
+  FOR SELECT USING (auth.uid() = player_id OR auth.uid() = quiz_owner_id);
+
+-- INSERT/UPDATE only via Edge Functions (service_role bypasses RLS)
+```
+
+### Policy Naming Convention
+- Format: `operation_scope` or descriptive phrase
+- Examples:
+  - `"select_public"` — anyone can read
+  - `"insert_owner"` — only owner can insert
+  - `"Users can update own profile"` — descriptive is also fine
+  - Be consistent within a migration file
+
+### Testing RLS
+- Write pgTAP tests for every policy.
+- Test as different roles: `anon`, `authenticated`, specific user IDs.
+- Test both allowed and denied operations.
+- Verify that default DENY works (no policy = no access).
+
+## Naming Conventions
+
+### Tables
+```sql
+-- ✅ snake_case, plural
+public.profiles
+public.quiz_sessions
+public.quiz_answers
+public.friend_requests
+
+-- ❌ Wrong
+public.Profile
+public.quizSession
+public.quiz-answers
+```
+
+### Columns
+```sql
+-- ✅ snake_case, descriptive
+user_id       UUID REFERENCES auth.users(id)
+quiz_id       UUID REFERENCES public.quizzes(id)
+created_at    TIMESTAMPTZ
+correct_count INTEGER
+is_active     BOOLEAN
+
+-- ❌ Wrong
+userId, quizId, createdAt, isActive
+```
+
+### Foreign Key Columns
+- Always suffix with `_id`: `user_id`, `quiz_id`, `category_id`.
+- Always add an index on FK columns.
+- Always specify `ON DELETE` behavior: `CASCADE`, `SET NULL`, or `RESTRICT`.
+
+### Enum Types
+```sql
+-- Create enum types for fixed value sets
+CREATE TYPE public.friend_request_status AS ENUM ('pending', 'accepted', 'rejected');
+CREATE TYPE public.question_category AS ENUM ('movies', 'music', 'food', 'travel', 'hobbies');
+```
+
+## Edge Functions
+
+### Structure
+```typescript
+// supabase/functions/generate-choices/index.ts
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import { createServiceRoleClient } from '../_shared/supabase-client.ts';
+
+serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    // 1. Validate auth
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2. Parse request body
+    const { questionId, correctAnswer } = await req.json();
+
+    // 3. Validate input
+    if (!questionId || !correctAnswer) {
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 4. Business logic
+    const supabase = createServiceRoleClient();
+    // ... generate choices via Gemini API ...
+
+    // 5. Return response
+    return new Response(
+      JSON.stringify({ choices }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
+```
+
+### Shared Utilities
+```typescript
+// supabase/functions/_shared/supabase-client.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+export function createServiceRoleClient() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { auth: { persistSession: false } }
+  );
+}
+
+export function createUserClient(authHeader: string) {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    }
+  );
+}
+```
+
+```typescript
+// supabase/functions/_shared/cors.ts
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*', // Restrict in production
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+```
+
+### Rules
+1. **Always validate authentication** — check `Authorization` header.
+2. **Always validate input** — never trust client data.
+3. **Use service_role client** for operations that bypass RLS (score writes).
+4. **Use user client** when you need RLS enforcement.
+5. **Handle CORS** — preflight `OPTIONS` request must return cors headers.
+6. **Structured error responses** — always return JSON with `error` field.
+7. **Rate limiting** — implement per-user rate limits for expensive operations (Gemini API calls).
+8. **Secrets** — store Gemini API key and other secrets in Supabase Edge Function secrets, never in code.
+9. **Logging** — use `console.error()` for errors, `console.log()` sparingly.
+10. **Shared code** — put reusable utilities in `_shared/` folder.
+
+### Score Calculation (Server-Authoritative)
+```typescript
+// supabase/functions/calculate-score/index.ts
+// CRITICAL: Only this Edge Function writes to quiz_scores table.
+// Client NEVER writes scores directly.
+// This prevents cheating — score is calculated from verified answers.
+```
+
+## Data Types
+
+### Preferred Types
+| Use Case | PostgreSQL Type | Notes |
+|----------|----------------|-------|
+| Primary key | `UUID DEFAULT gen_random_uuid()` | Never serial/auto-increment |
+| Foreign key | `UUID REFERENCES table(id)` | Always add index |
+| Timestamps | `TIMESTAMPTZ` | Always with timezone |
+| Short text | `TEXT` with CHECK constraint | `CHECK (char_length(username) <= 30)` |
+| Long text | `TEXT` | No artificial limits unless needed |
+| Boolean | `BOOLEAN NOT NULL DEFAULT false` | Always set default |
+| Count | `INTEGER NOT NULL DEFAULT 0` | Never nullable for counts |
+| Enum | Custom `ENUM` type | For fixed value sets |
+| JSON data | `JSONB` | Only for truly dynamic data |
+
+### Rules
+- Prefer specific types over `TEXT` or `JSONB` when the shape is known.
+- Always add `NOT NULL` with a `DEFAULT` unless the column is genuinely optional.
+- Use `CHECK` constraints for validation (string length, numeric ranges).
+- Use `UNIQUE` constraints where business logic requires it.
+
+## Seed Data
+
+### Format
+```sql
+-- supabase/seed.sql
+-- Development seed data — only run in local/staging environments
+
+-- Seed categories
+INSERT INTO public.categories (id, slug, name_tr, icon, sort_order) VALUES
+  (gen_random_uuid(), 'movies', 'Filmler', '🎬', 1),
+  (gen_random_uuid(), 'music', 'Müzik', '🎵', 2),
+  (gen_random_uuid(), 'food', 'Yemek', '🍕', 3),
+  (gen_random_uuid(), 'travel', 'Seyahat', '✈️', 4),
+  (gen_random_uuid(), 'hobbies', 'Hobiler', '🎮', 5)
+ON CONFLICT DO NOTHING;
+```
+
+### Rules
+- Seed data is for development only.
+- Use `ON CONFLICT DO NOTHING` to make seeds re-runnable.
+- Never include production secrets or real user data.
+- Include enough data to test all features.
+
+## Performance
+
+### Query Optimization
+- Always specify columns in `SELECT` — never `SELECT *`.
+- Add indexes on columns used in `WHERE`, `JOIN`, `ORDER BY`.
+- Use `EXPLAIN ANALYZE` to verify query plans.
+- Paginate: default `LIMIT 20`, max `LIMIT 100`.
+- Use `maybeSingle()` on the client when a row might not exist.
+
+### Connection Pooling
+- Use PgBouncer connection pooling in production (port 6543).
+- Transaction mode for serverless environments.
+- Session mode only when needed (prepared statements, advisory locks).
+
+## Backup & Recovery
+- Supabase managed backups for production.
+- Test restore procedures before launch.
+- Point-in-time recovery enabled for production project.

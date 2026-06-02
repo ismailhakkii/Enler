@@ -1,0 +1,358 @@
+---
+description: Flutter-specific coding standards for the Enler mobile app. Covers widget patterns, Riverpod, theming, performance, and testing.
+globs: enler_app/**/*.dart
+---
+
+# Enler — Flutter Coding Standards
+
+## Widget Structure
+
+### File Template
+Every screen/widget file should follow this order:
+```dart
+// 1. Dart/Flutter imports
+// 2. Package imports
+// 3. Project imports (relative within feature, package for cross-feature)
+// 4. Part directives (for Freezed/Riverpod code-gen)
+
+class MyWidget extends ConsumerWidget {
+  const MyWidget({super.key}); // Always const constructor
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);       // Access theme
+    final l10n = AppLocalizations.of(context)!; // Access localization
+
+    return ...; // Widget tree
+  }
+}
+```
+
+### Rules
+- Always use `const` constructors when possible.
+- Prefer `ConsumerWidget` / `ConsumerStatefulWidget` over `Consumer` wrapper.
+- Extract sub-widgets into separate classes when they exceed ~50 lines.
+- No God-widgets — if `build()` exceeds 100 lines, split it.
+- Use `Key` wisely — provide keys for list items and animated widgets.
+- Never use `MediaQuery.of(context)` directly for sizing — use `LayoutBuilder` or `MediaQuery.sizeOf(context)` (Flutter 3.10+).
+
+### Widget Decomposition Pattern
+```
+feature_screen.dart          # Screen (scaffold, appbar, layout)
+├── _feature_body.dart       # Body content (private widget or same file)
+├── feature_card.dart         # Reusable card component
+└── feature_empty_state.dart  # Empty state widget
+```
+
+## State Management — Riverpod
+
+### Provider Organization
+- One file per provider (or closely related group).
+- Providers live in `presentation/providers/` within each feature.
+- Shared providers go in `shared/providers/`.
+- Name providers descriptively: `quizSessionProvider`, `userProfileProvider`.
+
+### Code-Gen (Preferred)
+```dart
+@riverpod
+class QuizSession extends _$QuizSession {
+  @override
+  FutureOr<QuizState> build(String quizId) async {
+    return await ref.read(quizRepositoryProvider).getSession(quizId);
+  }
+
+  Future<void> submitAnswer(String answerId) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      return ref.read(quizRepositoryProvider).submitAnswer(answerId);
+    });
+  }
+}
+```
+
+### Rules
+- Always handle `AsyncValue` states: `when(data:, loading:, error:)`.
+- Use `ref.watch()` in build methods, `ref.read()` in callbacks/event handlers.
+- Never call `ref.watch()` inside conditionals or loops.
+- Auto-dispose is default with code-gen — keep it unless you have a good reason.
+- For one-time actions (navigation, snackbar), use `ref.listen()`.
+
+### Dependency Injection
+```dart
+// Repository provider (auto-generated from @riverpod)
+@riverpod
+AuthRepository authRepository(AuthRepositoryRef ref) {
+  return AuthRepository(supabase: ref.read(supabaseClientProvider));
+}
+```
+
+## Theming — Soft Aurora
+
+### Accessing Colors
+```dart
+// ✅ Correct
+final primary = Theme.of(context).colorScheme.primary;
+final bgColor = Theme.of(context).colorScheme.surface;
+
+// ❌ Wrong — never hardcode colors
+final primary = Color(0xFF6366F1);
+```
+
+### Accessing Text Styles
+```dart
+// ✅ Correct
+Text('Hello', style: Theme.of(context).textTheme.headlineMedium);
+
+// ❌ Wrong — never create ad-hoc styles
+Text('Hello', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold));
+```
+
+### Custom Tokens (for tokens not in Material 3)
+Access via theme extensions:
+```dart
+final enlerColors = Theme.of(context).extension<EnlerColors>()!;
+final warmAccent = enlerColors.warmAccent;    // #F472B6
+final rewardColor = enlerColors.reward;        // #F59E0B
+```
+
+### Gradients
+```dart
+// Share card gradient — always use the constant
+const kShareCardGradient = LinearGradient(
+  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+```
+
+## Localization
+
+### Access Pattern
+```dart
+// Define a short alias in core/extensions/
+extension BuildContextL10n on BuildContext {
+  AppLocalizations get l10n => AppLocalizations.of(this)!;
+}
+
+// Usage
+Text(context.l10n.profileTitle); // "Profilim"
+```
+
+### Rules
+- Every user-visible string must be in `app_tr.arb`.
+- Use ICU message format for plurals and parameters:
+  ```json
+  "quizScore": "{score} puan kazandın!",
+  "friendCount": "{count, plural, =0{Henüz arkadaş yok} =1{1 arkadaş} other{{count} arkadaş}}"
+  ```
+- Never concatenate strings — use parameterized messages.
+
+## Supabase Client Usage
+
+### Query Pattern
+```dart
+// ✅ Correct — specific columns, error handling
+final response = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url')
+    .eq('id', userId)
+    .maybeSingle();
+
+// ❌ Wrong — select all columns
+final response = await supabase.from('profiles').select('*');
+
+// ❌ Wrong — single() throws on no result
+final response = await supabase.from('profiles').select().single();
+```
+
+### Realtime
+```dart
+// Use StreamProvider for Realtime subscriptions
+@riverpod
+Stream<List<QuizAnswer>> quizAnswers(QuizAnswersRef ref, String sessionId) {
+  return supabase
+      .from('quiz_answers')
+      .stream(primaryKey: ['id'])
+      .eq('session_id', sessionId)
+      .map((rows) => rows.map(QuizAnswer.fromJson).toList());
+}
+```
+
+## Navigation — GoRouter
+
+### Route Definition
+```dart
+GoRoute(
+  path: '/quiz/:id',
+  name: 'quiz',
+  builder: (context, state) {
+    final quizId = state.pathParameters['id']!;
+    return QuizScreen(quizId: quizId);
+  },
+),
+```
+
+### Navigation
+```dart
+// ✅ Named routes
+context.goNamed('quiz', pathParameters: {'id': quizId});
+
+// ✅ Push for stack navigation
+context.pushNamed('quiz', pathParameters: {'id': quizId});
+
+// ❌ Never use Navigator.push directly
+Navigator.push(context, MaterialPageRoute(...));
+```
+
+## Model Layer — Freezed
+
+### Pattern
+```dart
+@freezed
+class UserProfile with _$UserProfile {
+  const factory UserProfile({
+    required String id,
+    required String username,
+    String? avatarUrl,
+    @Default(0) int quizCount,
+  }) = _UserProfile;
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) =>
+      _$UserProfileFromJson(json);
+}
+```
+
+### Rules
+- All domain models use Freezed.
+- DTOs (Data Transfer Objects) can be plain classes if Freezed is overkill.
+- Use `@Default()` for optional fields with defaults.
+- Use union types for state modeling:
+  ```dart
+  @freezed
+  sealed class QuizState with _$QuizState {
+    const factory QuizState.initial() = QuizInitial;
+    const factory QuizState.playing({required Question question}) = QuizPlaying;
+    const factory QuizState.finished({required int score}) = QuizFinished;
+  }
+  ```
+
+## Performance
+
+### Critical Rules
+- ✅ `const` constructors everywhere.
+- ✅ `ListView.builder` for any list with 10+ items.
+- ✅ `RepaintBoundary` around expensive subtrees (animations, complex layouts).
+- ✅ `cached_network_image` for all network images.
+- ✅ Image assets at proper resolution (1x, 2x, 3x).
+- ❌ No `BackdropFilter` on main scrollable content — kills mid-range Android perf.
+- ❌ No `Opacity` widget for fading — use `AnimatedOpacity` or `FadeTransition`.
+- ❌ No unnecessary `setState` — prefer Riverpod state updates.
+- ❌ No `print()` statements — use `debugPrint()` or a logging package.
+
+### Image Guidelines
+```dart
+// ✅ Use cached_network_image
+CachedNetworkImage(
+  imageUrl: avatarUrl,
+  width: 48,
+  height: 48,
+  fit: BoxFit.cover,
+  placeholder: (_, __) => const AvatarPlaceholder(),
+  errorWidget: (_, __, ___) => const AvatarFallback(),
+)
+```
+
+## Testing
+
+### Unit Tests (Domain + Data)
+```dart
+// test/features/quiz/domain/quiz_service_test.dart
+void main() {
+  group('QuizService', () {
+    late QuizService service;
+    late MockQuizRepository mockRepo;
+
+    setUp(() {
+      mockRepo = MockQuizRepository();
+      service = QuizService(repository: mockRepo);
+    });
+
+    test('calculateScore returns correct percentage', () {
+      expect(service.calculateScore(correct: 7, total: 10), 70);
+    });
+  });
+}
+```
+
+### Widget Tests
+```dart
+void main() {
+  testWidgets('QuizCard displays question text', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: QuizCard(question: 'Favorite movie?'),
+        ),
+      ),
+    );
+
+    expect(find.text('Favorite movie?'), findsOneWidget);
+  });
+}
+```
+
+### Rules
+- Test files live alongside source files: `quiz_service_test.dart` next to `quiz_service.dart`, or in a mirrored `test/` directory.
+- Mock repositories with `mockito` or `mocktail` — generated mocks preferred.
+- Wrap widgets in `ProviderScope` for tests using Riverpod.
+- Test error states, not just happy paths.
+- Minimum coverage: all domain logic and repository methods.
+
+## Error Handling
+
+### Pattern
+```dart
+// Use AsyncValue.guard for async operations
+state = await AsyncValue.guard(() async {
+  return await repository.fetchData();
+});
+
+// Display errors consistently
+ref.watch(someProvider).when(
+  data: (data) => DataWidget(data: data),
+  loading: () => const EnlerLoadingIndicator(),
+  error: (error, stack) => EnlerErrorWidget(
+    message: context.l10n.genericError,
+    onRetry: () => ref.invalidate(someProvider),
+  ),
+);
+```
+
+### Rules
+- Never silently swallow exceptions — log them at minimum.
+- Show user-friendly error messages from localization, not raw exception text.
+- Always provide a retry mechanism for network errors.
+- Use custom exception classes for domain-specific errors.
+
+## File Naming Examples
+```
+lib/features/auth/
+├── data/
+│   ├── auth_repository.dart
+│   └── auth_remote_data_source.dart
+├── domain/
+│   ├── auth_user.dart              # Freezed model
+│   ├── auth_user.freezed.dart      # Generated
+│   ├── auth_user.g.dart            # Generated
+│   └── auth_failure.dart           # Sealed class for failures
+└── presentation/
+    ├── screens/
+    │   ├── login_screen.dart
+    │   └── register_screen.dart
+    ├── widgets/
+    │   ├── social_login_button.dart
+    │   └── auth_text_field.dart
+    └── providers/
+        ├── auth_provider.dart
+        └── auth_provider.g.dart    # Generated
+```

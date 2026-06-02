@@ -1,0 +1,419 @@
+---
+description: Next.js coding standards for the Enler web quiz player app. Covers App Router, Server vs Client Components, i18n, metadata, and performance.
+globs: enler_web/**/*
+---
+
+# Enler — Next.js Coding Standards
+
+## Project Context
+The Next.js app (`enler_web/`) serves two purposes:
+1. **Public quiz player** — Friends visit a shared link to play a quiz in the browser.
+2. **Share card landing page** — Beautiful OG image / result page for social sharing.
+
+It is NOT a full replica of the Flutter app. Keep it focused and lightweight.
+
+## App Router Structure
+
+```
+src/app/
+├── [locale]/                    # Dynamic locale segment (tr for v1)
+│   ├── layout.tsx               # Locale-aware layout with providers
+│   ├── page.tsx                 # Landing / marketing page
+│   ├── quiz/
+│   │   └── [id]/
+│   │       ├── page.tsx         # Quiz play page (Server Component shell)
+│   │       └── quiz-player.tsx  # Client Component (interactive quiz)
+│   └── result/
+│       └── [id]/
+│           └── page.tsx         # Result + share card page
+├── api/                         # API routes (if needed beyond Supabase)
+│   └── og/
+│       └── route.tsx            # OG image generation
+├── layout.tsx                   # Root layout (html, body, fonts)
+├── globals.css                  # Global styles + CSS custom properties
+├── not-found.tsx                # 404 page
+└── error.tsx                    # Error boundary
+```
+
+## Server vs Client Components
+
+### Default: Server Components
+Every component is a Server Component unless it needs interactivity.
+
+```tsx
+// ✅ Server Component (default) — no directive needed
+export default async function QuizPage({ params }: Props) {
+  const quiz = await getQuiz(params.id);
+  return <QuizShell quiz={quiz} />;
+}
+```
+
+### When to use `'use client'`
+Add `'use client'` ONLY when the component:
+- Uses React hooks (`useState`, `useEffect`, `useRef`, etc.)
+- Uses browser APIs (`window`, `document`, `localStorage`)
+- Handles user events (`onClick`, `onChange`, `onSubmit`)
+- Uses context providers
+- Needs Realtime subscriptions
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+
+export function QuizPlayer({ questions }: Props) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  // Interactive quiz logic...
+}
+```
+
+### Rules
+- Keep `'use client'` boundary as low as possible in the component tree.
+- Pass serializable data from Server → Client components via props.
+- Never import server-only code (db, secrets) in client components.
+- Use `next/dynamic` for heavy client components:
+  ```tsx
+  const QuizPlayer = dynamic(() => import('./quiz-player'), {
+    loading: () => <QuizSkeleton />,
+  });
+  ```
+
+## TypeScript Standards
+
+### Type Definitions
+```tsx
+// src/lib/types.ts — shared types
+export interface Quiz {
+  id: string;
+  ownerUsername: string;
+  questions: Question[];
+  createdAt: string;
+}
+
+export interface Question {
+  id: string;
+  categorySlug: string;
+  questionText: string;
+  choices: Choice[];
+}
+
+export interface Choice {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+```
+
+### Rules
+- Use `interface` for object shapes, `type` for unions/intersections.
+- No `any` — use `unknown` and narrow with type guards.
+- Strict mode enabled (`"strict": true` in tsconfig).
+- Export types from `src/lib/types.ts` for shared use.
+- Component props are defined as interfaces named `{Component}Props`.
+
+## Supabase Client
+
+### Server-Side (Server Components, Route Handlers)
+```tsx
+// src/lib/supabase/server.ts
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+
+export async function createSupabaseServer() {
+  const cookieStore = await cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+}
+```
+
+### Client-Side (Client Components)
+```tsx
+// src/lib/supabase/client.ts
+import { createBrowserClient } from '@supabase/ssr';
+
+export function createSupabaseBrowser() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+```
+
+### Query Rules
+```tsx
+// ✅ Specific columns
+const { data } = await supabase
+  .from('quizzes')
+  .select('id, owner_username, question_count, created_at')
+  .eq('id', quizId)
+  .maybeSingle();
+
+// ❌ Never select all
+const { data } = await supabase.from('quizzes').select('*');
+```
+
+## Localization (next-intl)
+
+### Setup
+```
+src/messages/
+└── tr.json          # Turkish messages (v1 only)
+```
+
+### Message File Structure
+```json
+{
+  "common": {
+    "loading": "Yükleniyor...",
+    "error": "Bir hata oluştu",
+    "retry": "Tekrar dene"
+  },
+  "quiz": {
+    "title": "Quiz Zamanı!",
+    "question": "{current}/{total}. Soru",
+    "timeLeft": "{seconds} saniye kaldı",
+    "submit": "Cevabı Gönder"
+  },
+  "result": {
+    "title": "Sonuçlar",
+    "score": "{score}/{total} doğru",
+    "share": "Paylaş"
+  }
+}
+```
+
+### Usage in Server Components
+```tsx
+import { getTranslations } from 'next-intl/server';
+
+export default async function QuizPage() {
+  const t = await getTranslations('quiz');
+  return <h1>{t('title')}</h1>;
+}
+```
+
+### Usage in Client Components
+```tsx
+'use client';
+import { useTranslations } from 'next-intl';
+
+export function QuizTimer({ seconds }: Props) {
+  const t = useTranslations('quiz');
+  return <span>{t('timeLeft', { seconds })}</span>;
+}
+```
+
+### Rules
+- All UI strings through `next-intl`. Zero hardcoded Turkish text.
+- Use namespaced keys: `common.`, `quiz.`, `result.`.
+- Parameterized strings for dynamic content — never concatenate.
+- Keep message keys in `camelCase`.
+
+## Metadata & SEO
+
+### Per-Page Metadata
+```tsx
+import type { Metadata } from 'next';
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const quiz = await getQuiz(params.id);
+  return {
+    title: `${quiz.ownerUsername} seni ne kadar tanıyor? | Enler`,
+    description: 'Arkadaşının favorilerini tahmin et!',
+    openGraph: {
+      title: `${quiz.ownerUsername} - Enler Quiz`,
+      description: 'Arkadaşının favorilerini tahmin et!',
+      images: [`/api/og?quizId=${params.id}`],
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+    },
+  };
+}
+```
+
+### Rules
+- Every page MUST have `generateMetadata()`.
+- OG images are generated dynamically via `/api/og/` route.
+- Include `title`, `description`, and `openGraph` at minimum.
+- Use Soft Aurora gradient in OG images (indigo → violet).
+
+## Styling
+
+### Design Tokens (CSS Custom Properties)
+```css
+/* src/styles/tokens.css */
+:root {
+  --color-background: #FAFAF8;
+  --color-surface: #FFFFFF;
+  --color-surface-variant: #F5F5F4;
+  --color-primary: #6366F1;
+  --color-secondary: #8B5CF6;
+  --color-warm-accent: #F472B6;
+  --color-reward: #F59E0B;
+  --color-success: #10B981;
+  --color-error: #EF4444;
+  --color-text-primary: #1C1917;
+  --color-text-secondary: #78716C;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --radius-card: 16px;
+  --radius-button: 12px;
+  --radius-input: 12px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --gradient-share: linear-gradient(135deg, #6366F1, #8B5CF6);
+}
+```
+
+### CSS Modules
+```tsx
+// quiz-card.module.css
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-md);
+}
+
+// quiz-card.tsx
+import styles from './quiz-card.module.css';
+export function QuizCard() {
+  return <div className={styles.card}>...</div>;
+}
+```
+
+### Rules
+- Use CSS custom properties from `tokens.css` — never hardcode colors.
+- CSS Modules for component-scoped styles.
+- Global styles only in `globals.css` (resets, base typography).
+- No CSS-in-JS libraries (styled-components, emotion) — keep it simple.
+- No Tailwind in v1 — plain CSS Modules with design tokens.
+
+## Images
+
+### Rules
+```tsx
+// ✅ Always use next/image
+import Image from 'next/image';
+
+<Image
+  src={avatarUrl}
+  alt={username}
+  width={48}
+  height={48}
+  className={styles.avatar}
+/>
+
+// ❌ Never use raw img tags
+<img src={avatarUrl} alt={username} />
+```
+
+- Always provide `width` and `height` or use `fill` with a sized container.
+- Use `priority` for above-the-fold images (LCP).
+- Configure `remotePatterns` in `next.config.ts` for Supabase Storage URLs.
+
+## Error Handling
+
+### Error Boundaries
+```tsx
+// src/app/[locale]/quiz/[id]/error.tsx
+'use client';
+
+export default function QuizError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <div>
+      <h2>Bir şeyler yanlış gitti</h2>
+      <button onClick={reset}>Tekrar dene</button>
+    </div>
+  );
+}
+```
+
+### Loading States
+```tsx
+// src/app/[locale]/quiz/[id]/loading.tsx
+export default function QuizLoading() {
+  return <QuizSkeleton />;
+}
+```
+
+### Rules
+- Every route segment should have `error.tsx` and `loading.tsx`.
+- Display user-friendly messages from localization, not raw errors.
+- Log errors server-side for debugging.
+
+## Performance
+
+### Targets
+- Lighthouse: 95+ on Performance, Accessibility, Best Practices, SEO.
+- First Contentful Paint: < 1.5s.
+- Largest Contentful Paint: < 2.5s.
+- Total Bundle Size: minimize client JS.
+
+### Techniques
+- Server Components by default (zero client JS for static content).
+- Dynamic imports for heavy interactive components.
+- `next/image` for automatic optimization.
+- Prefetch critical navigation links.
+- Edge runtime for API routes when possible.
+- Minimize `'use client'` surface area.
+
+## Environment Variables
+```env
+# .env.local (never committed)
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...       # Server-only, never NEXT_PUBLIC_
+```
+
+### Rules
+- `NEXT_PUBLIC_` prefix for client-accessible vars only.
+- Service role key is server-only — never expose to client.
+- Use `.env.local` for development, environment variables in production.
+- Validate env vars at build time with `@t3-oss/env-nextjs` or manual checks.
+
+## File Naming
+```
+src/
+├── app/[locale]/quiz/[id]/
+│   ├── page.tsx                 # kebab-case for route dirs
+│   ├── quiz-player.tsx          # kebab-case for component files
+│   ├── quiz-player.module.css   # Matching CSS module
+│   ├── loading.tsx              # Next.js conventions
+│   └── error.tsx
+├── components/
+│   ├── ui/
+│   │   ├── button.tsx           # Lowercase for primitives
+│   │   └── button.module.css
+│   └── quiz/
+│       ├── quiz-card.tsx
+│       └── quiz-card.module.css
+└── lib/
+    ├── supabase/
+    │   ├── server.ts
+    │   └── client.ts
+    ├── utils.ts
+    └── types.ts
+```

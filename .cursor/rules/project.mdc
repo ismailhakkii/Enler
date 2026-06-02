@@ -1,0 +1,116 @@
+---
+description: General project rules for the Enler social quiz app. Read by Cursor for every file in the workspace.
+globs: **/*
+---
+
+# Enler — General Project Rules
+
+## First Step — Always
+Read `PROJECT_STATUS.md` before starting any task. It tells you the current phase, what's built, and what's next.
+
+## Project Summary
+Enler is a social quiz app. Users create profiles with their favorites (movies, food, music, etc.) and friends guess their answers. Built with Flutter (mobile) + Next.js (web quiz) + Supabase (backend).
+
+**Publisher:** CodeBros | **Domain:** enlerapp.com | **Bundle ID:** com.codebros.enler
+
+## Architecture — Feature-First
+
+### Flutter (`enler_app/`)
+```
+lib/
+├── core/          # Theme, constants, utils, router, DI
+├── features/      # Self-contained feature modules
+│   └── <feature>/
+│       ├── data/           # Repos, data sources, DTOs
+│       ├── domain/         # Entities, repo interfaces, use cases
+│       └── presentation/   # Screens, widgets, providers
+├── shared/        # Cross-feature widgets, models, providers
+├── l10n/          # ARB localization files
+└── main.dart
+```
+
+### Next.js (`enler_web/`)
+```
+src/
+├── app/[locale]/   # i18n-aware App Router pages
+├── components/     # UI + feature components
+├── lib/            # Supabase client, utils, types
+├── messages/       # next-intl JSON files
+└── styles/         # Design tokens, CSS modules
+```
+
+### Supabase (`supabase/`)
+```
+supabase/
+├── migrations/     # Timestamped SQL migrations
+├── functions/      # Edge Functions (Deno)
+├── seed.sql        # Dev seed data
+└── tests/          # pgTAP, Edge Function tests
+```
+
+## Tech Stack
+- **Mobile:** Flutter + Riverpod + GoRouter + Freezed
+- **Web:** Next.js 15 (App Router) + TypeScript + next-intl
+- **Backend:** Supabase (PostgreSQL, Auth, Edge Functions, Realtime, Storage)
+- **AI:** Gemini API (wrong answer generation)
+- **CI/CD:** GitHub Actions
+
+## Design: Soft Aurora (Single Light Theme)
+- Background: `#FAFAF8` | Surface: `#FFFFFF` | Surface variant: `#F5F5F4`
+- Primary: `#6366F1` (indigo) | Secondary: `#8B5CF6` (violet)
+- Warm accent: `#F472B6` | Reward: `#F59E0B` | Success: `#10B981` | Error: `#EF4444`
+- Text primary: `#1C1917` | Text secondary: `#78716C`
+- Share card gradient: `#6366F1 → #8B5CF6`
+- No dark mode in v1. Reference `docs/DESIGN_SYSTEM.md` for full tokens.
+
+## Naming Conventions
+| Context | Convention | Example |
+|---------|-----------|---------|
+| Dart files | `snake_case` | `auth_screen.dart` |
+| Dart classes | `PascalCase` | `AuthScreen` |
+| Dart variables | `camelCase` | `userName` |
+| TS/TSX files | `kebab-case` or `PascalCase` | `quiz-player.tsx` |
+| DB tables/columns | `snake_case` | `quiz_sessions` |
+| Edge Functions | `kebab-case` dirs | `generate-choices/` |
+| Git branches | `type/description` | `feature/quiz-flow` |
+| Git commits | Conventional Commits | `feat(quiz): add timer` |
+| Env vars | `SCREAMING_SNAKE` | `SUPABASE_URL` |
+
+## Localization
+- i18n is set up from day 1. v1 ships **Turkish only**.
+- Flutter: `intl` + ARB files in `lib/l10n/`.
+- Next.js: `next-intl` + JSON in `src/messages/`.
+- All UI strings go through localization. Code/comments/docs in English.
+
+## Hard Rules — DO NOT Violate
+1. ❌ No files outside the feature-first structure.
+2. ❌ No hardcoded colors — use theme tokens via `Theme.of(context)`.
+3. ❌ No hardcoded UI strings — use localization keys.
+4. ❌ No `select('*')` in Supabase — always list columns.
+5. ❌ No tables without RLS policies (default DENY).
+6. ❌ No new packages without rationale in `docs/ARCHITECTURE.md`.
+7. ❌ No skipping tests for business/data logic.
+8. ❌ No client-side score writes — Edge Functions only.
+9. ❌ No secrets in source code.
+10. ❌ No `ListView(children: [...])` for long/dynamic lists — use `.builder`.
+
+## Performance Targets
+- APK size: < 25 MB
+- Lighthouse (web): 95+ on all metrics
+- Frame rate: 60fps on mid-range Android
+- Supabase: paginate (limit 20), index FKs, explicit column selects
+
+## Security
+- RLS on every table with default DENY.
+- Scores written only by Edge Functions.
+- API keys in `.env`, never committed.
+- Auth tokens in `flutter_secure_storage`.
+- Input validation: client + server.
+
+## Key Docs
+- `PROJECT_STATUS.md` — Current phase and status
+- `docs/ARCHITECTURE.md` — System design and decisions
+- `docs/DESIGN_SYSTEM.md` — Design tokens and components
+- `docs/DATABASE_SCHEMA.md` — Schema, RLS, indexes
+- `docs/API_SPEC.md` — Edge Function API contracts
+- `docs/ROADMAP.md` — Delivery phases and milestones
