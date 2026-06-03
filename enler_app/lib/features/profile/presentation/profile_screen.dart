@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
@@ -430,7 +431,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 12),
             GestureDetector(
               onTap: () {
-                // TODO(share): Implement share_plus link sharing
+                final username = _profile?.username ?? '';
+                Share.share(
+                  'Beni ne kadar tanıyorsun? 🤔 Test et: enlerapp.com/$username',
+                );
               },
               child: Container(
                 padding:

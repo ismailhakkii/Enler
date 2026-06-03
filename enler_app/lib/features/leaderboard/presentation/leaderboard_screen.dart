@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../profile/data/profile_repository.dart';
@@ -333,7 +334,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
             const SizedBox(height: 24),
             GestureDetector(
               onTap: () {
-                // TODO(share): Implement share_plus link sharing
+                Share.share(
+                  'Beni ne kadar tanıyorsun? 🤔 Test et: enlerapp.com',
+                );
               },
               child: Container(
                 padding:
