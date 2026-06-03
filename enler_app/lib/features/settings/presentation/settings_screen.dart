@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
@@ -70,9 +71,7 @@ class SettingsScreen extends ConsumerWidget {
               iconColor: AppColors.warmAccent,
               title: 'Emoji Değiştir',
               trailing: Text(avatarEmoji, style: const TextStyle(fontSize: 20)),
-              onTap: () {
-                // TODO(navigation): Navigate to emoji picker
-              },
+              onTap: () => context.push(AppRoutes.profileEdit),
             ),
           ])
               .animate()
@@ -91,7 +90,7 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Bildirimler',
               value: true,
               onChanged: (value) {
-                // TODO(riverpod): ref.read(settingsProvider.notifier).setNotifications(value)
+                // Bildirim desteği MVP sonrası eklenecek
               },
             ),
           ])
@@ -122,17 +121,19 @@ class SettingsScreen extends ConsumerWidget {
               icon: Icons.privacy_tip_outlined,
               iconColor: AppColors.secondary,
               title: 'Gizlilik Politikası',
-              onTap: () {
-                // TODO(url): Launch privacy policy URL
-              },
+              onTap: () => launchUrl(
+                Uri.parse('https://enlerapp.com/privacy'),
+                mode: LaunchMode.externalApplication,
+              ),
             ),
             _SettingsTile(
               icon: Icons.description_outlined,
               iconColor: AppColors.secondary,
               title: 'Kullanım Şartları',
-              onTap: () {
-                // TODO(url): Launch terms of service URL
-              },
+              onTap: () => launchUrl(
+                Uri.parse('https://enlerapp.com/terms'),
+                mode: LaunchMode.externalApplication,
+              ),
             ),
           ])
               .animate()
