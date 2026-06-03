@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../auth/data/auth_repository.dart';
+import '../../profile/data/profile_repository.dart';
 
 /// Settings screen.
 ///
@@ -14,15 +16,14 @@ import '../../../core/theme/app_colors.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
-  // ── Mock Data ──────────────────────────────────────────────────────────
-  // TODO(riverpod): Replace with ref.watch(currentUserProvider)
-  static const _mockDisplayName = 'Ahmet Yılmaz';
-  static const _mockUsername = 'ahmet_yilmaz';
-  static const _mockAvatarEmoji = '😎';
-  static const _mockAppVersion = '0.1.0';
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(currentProfileProvider);
+    final profile = profileAsync.valueOrNull;
+    final displayName = profile?.displayName ?? 'Kullanıcı';
+    final username = profile?.username ?? '';
+    final avatarEmoji = profile?.avatarEmoji ?? '😊';
+    const appVersion = '0.1.0';
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -46,7 +47,7 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [
           // ── User Info Card ──────────────────────────────────────────
-          _buildUserCard()
+          _buildUserCard(displayName, username, avatarEmoji)
               .animate()
               .fadeIn(duration: 500.ms)
               .slideY(begin: 0.05, end: 0, duration: 500.ms),
@@ -68,7 +69,7 @@ class SettingsScreen extends ConsumerWidget {
               icon: Icons.emoji_emotions_outlined,
               iconColor: AppColors.warmAccent,
               title: 'Emoji Değiştir',
-              trailing: const Text('😎', style: TextStyle(fontSize: 20)),
+              trailing: Text(avatarEmoji, style: const TextStyle(fontSize: 20)),
               onTap: () {
                 // TODO(navigation): Navigate to emoji picker
               },
@@ -109,7 +110,7 @@ class SettingsScreen extends ConsumerWidget {
               iconColor: AppColors.primary,
               title: 'Versiyon',
               trailing: Text(
-                _mockAppVersion,
+                appVersion,
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: AppColors.textTertiary,
@@ -166,7 +167,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   // ── User Info Card ───────────────────────────────────────────────────
-  Widget _buildUserCard() {
+  Widget _buildUserCard(String displayName, String username, String avatarEmoji) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -190,8 +191,8 @@ class SettingsScreen extends ConsumerWidget {
               shape: BoxShape.circle,
               color: AppColors.surfaceAlt,
             ),
-            child: const Center(
-              child: Text(_mockAvatarEmoji, style: TextStyle(fontSize: 32)),
+            child: Center(
+              child: Text(avatarEmoji, style: const TextStyle(fontSize: 32)),
             ),
           ),
           const SizedBox(width: 14),
@@ -201,7 +202,7 @@ class SettingsScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _mockDisplayName,
+                  displayName,
                   style: GoogleFonts.outfit(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -210,7 +211,7 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '@$_mockUsername',
+                  '@$username',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     color: AppColors.textSecondary,
@@ -301,9 +302,10 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              // TODO(riverpod): ref.read(authProvider.notifier).signOut()
+              await ref.read(authRepositoryProvider).signOut();
+              if (context.mounted) context.go(AppRoutes.auth);
             },
             child: Text(
               'Çıkış Yap',
@@ -360,9 +362,11 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              // TODO(riverpod): ref.read(authProvider.notifier).deleteAccount()
+              // TODO: Implement full account deletion (cascade delete in DB)
+              await ref.read(authRepositoryProvider).signOut();
+              if (context.mounted) context.go(AppRoutes.auth);
             },
             child: Text(
               'Hesabı Sil',
