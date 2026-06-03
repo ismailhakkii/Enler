@@ -3,16 +3,27 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/models/badge_info.dart';
+import '../../profile/data/profile_repository.dart';
+import '../../profile/domain/profile_model.dart';
+import '../data/quiz_repository.dart';
+import '../domain/quiz_session_model.dart';
 
 /// Result screen shown after completing a quiz.
 ///
-/// Features animated percentage ring, badge display, FOMO text,
-/// share buttons, and confetti for high scores.
+/// Receives [sessionId] from the router and loads the completed session
+/// from Supabase. Features animated percentage ring, badge display,
+/// FOMO text, share buttons, and confetti for high scores.
 class ResultScreen extends ConsumerStatefulWidget {
-  const ResultScreen({super.key});
+  const ResultScreen({super.key, required this.sessionId});
+
+  final String sessionId;
 
   @override
   ConsumerState<ResultScreen> createState() => _ResultScreenState();
@@ -20,17 +31,11 @@ class ResultScreen extends ConsumerStatefulWidget {
 
 class _ResultScreenState extends ConsumerState<ResultScreen>
     with SingleTickerProviderStateMixin {
-  // ── Mock Data ──────────────────────────────────────────────────────────
-  // TODO(riverpod): Replace with ref.watch(quizResultProvider(sessionId))
-  static const _mockOwnerEmoji = '😎';
-  static const _mockOwnerName = 'Ahmet';
-  static const _mockPercentage = 87;
-  static const _mockBadgeEmoji = '💪';
-  static const _mockBadgeName = 'Kanka';
-  static const _mockBadgeSlogan = 'Neredeyse kankasın 👀';
-  static const _mockBetterThanCount = 3;
-  static final _mockBadgeColor = AppColors.badgeBestFriend;
-  static const _mockUsername = 'ahmet_yilmaz';
+  QuizSession? _session;
+  Profile? _owner;
+  BadgeInfo? _badge;
+  int _betterThanCount = 0;
+  bool _isLoading = true;
 
   late AnimationController _ringController;
   late Animation<double> _ringAnimation;
@@ -42,16 +47,56 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _ringAnimation = Tween<double>(begin: 0, end: _mockPercentage / 100)
-        .animate(CurvedAnimation(
-      parent: _ringController,
-      curve: Curves.easeOutCubic,
-    ));
+    _ringAnimation = Tween<double>(begin: 0, end: 0).animate(
+      CurvedAnimation(parent: _ringController, curve: Curves.easeOutCubic),
+    );
+    _loadResult();
+  }
 
-    // Delay start to let the screen build
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) _ringController.forward();
-    });
+  Future<void> _loadResult() async {
+    try {
+      final quizRepo = ref.read(quizRepositoryProvider);
+      final profileRepo = ref.read(profileRepositoryProvider);
+
+      final session = await quizRepo.getSessionById(widget.sessionId);
+      if (session == null || !mounted) return;
+
+      final owner = await profileRepo.getProfileById(session.profileId);
+
+      // Count how many people scored better
+      final leaderboard = await quizRepo.getLeaderboard(session.profileId);
+      int betterCount = 0;
+      for (final s in leaderboard) {
+        if (s.percentage > session.percentage) betterCount++;
+      }
+
+      final badge = BadgeInfo.fromPercentage(session.percentage);
+
+      if (!mounted) return;
+      setState(() {
+        _session = session;
+        _owner = owner;
+        _badge = badge;
+        _betterThanCount = betterCount;
+        _isLoading = false;
+      });
+
+      // Update ring animation target
+      _ringAnimation = Tween<double>(
+        begin: 0,
+        end: session.percentage / 100,
+      ).animate(
+        CurvedAnimation(parent: _ringController, curve: Curves.easeOutCubic),
+      );
+
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _ringController.forward();
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -62,7 +107,18 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isHighScore = _mockPercentage > 80;
+    if (_isLoading || _session == null || _badge == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    final session = _session!;
+    final badge = _badge!;
+    final isHighScore = session.percentage > 80;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -81,7 +137,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                   Align(
                     alignment: Alignment.centerLeft,
                     child: GestureDetector(
-                      onTap: () => Navigator.of(context).maybePop(),
+                      onTap: () => context.go(AppRoutes.home),
                       child: Container(
                         width: 40,
                         height: 40,
@@ -107,7 +163,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                   const SizedBox(height: 20),
 
                   // ── Owner emoji avatar ───────────────────────────────
-                  _buildOwnerAvatar()
+                  _buildOwnerAvatar(badge)
                       .animate()
                       .fadeIn(duration: 500.ms)
                       .scale(
@@ -118,21 +174,22 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                   const SizedBox(height: 24),
 
                   // ── Percentage ring ──────────────────────────────────
-                  _buildPercentageRing()
+                  _buildPercentageRing(badge)
                       .animate()
                       .fadeIn(duration: 600.ms, delay: 200.ms),
                   const SizedBox(height: 20),
 
                   // ── Badge pill ───────────────────────────────────────
-                  _buildBadgePill()
+                  _buildBadgePill(badge)
                       .animate()
                       .fadeIn(duration: 500.ms, delay: 500.ms)
-                      .slideY(begin: 0.2, end: 0, duration: 500.ms, delay: 500.ms),
+                      .slideY(
+                          begin: 0.2, end: 0, duration: 500.ms, delay: 500.ms),
                   const SizedBox(height: 8),
 
                   // ── Slogan ───────────────────────────────────────────
                   Text(
-                    _mockBadgeSlogan,
+                    badge.sloganTr,
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontStyle: FontStyle.italic,
@@ -144,44 +201,57 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                   const SizedBox(height: 16),
 
                   // ── FOMO text ────────────────────────────────────────
-                  Text(
-                    'Senden daha iyi bilen: $_mockBetterThanCount kişi var 😏',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.textPrimary,
-                    ),
-                  )
-                      .animate()
-                      .fadeIn(duration: 500.ms, delay: 900.ms),
+                  if (_betterThanCount > 0)
+                    Text(
+                      'Senden daha iyi bilen: $_betterThanCount kişi var 😏',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                      ),
+                    )
+                        .animate()
+                        .fadeIn(duration: 500.ms, delay: 900.ms),
                   const SizedBox(height: 32),
 
                   // ── Share Story button ───────────────────────────────
-                  _buildShareStoryButton()
+                  _buildShareStoryButton(session, badge)
                       .animate()
                       .fadeIn(duration: 500.ms, delay: 1100.ms)
-                      .slideY(begin: 0.1, end: 0, duration: 500.ms, delay: 1100.ms),
+                      .slideY(
+                          begin: 0.1,
+                          end: 0,
+                          duration: 500.ms,
+                          delay: 1100.ms),
                   const SizedBox(height: 12),
 
                   // ── Create yours button ──────────────────────────────
                   _buildCreateButton()
                       .animate()
                       .fadeIn(duration: 500.ms, delay: 1200.ms)
-                      .slideY(begin: 0.1, end: 0, duration: 500.ms, delay: 1200.ms),
+                      .slideY(
+                          begin: 0.1,
+                          end: 0,
+                          duration: 500.ms,
+                          delay: 1200.ms),
                   const SizedBox(height: 32),
 
                   // ── Share card preview ───────────────────────────────
-                  _buildShareCardPreview()
+                  _buildShareCardPreview(session, badge)
                       .animate()
                       .fadeIn(duration: 600.ms, delay: 1400.ms)
-                      .slideY(begin: 0.1, end: 0, duration: 600.ms, delay: 1400.ms),
+                      .slideY(
+                          begin: 0.1,
+                          end: 0,
+                          duration: 600.ms,
+                          delay: 1400.ms),
                   const SizedBox(height: 40),
                 ],
               ),
             ),
           ),
 
-          // ── Confetti / particle animation for high scores ──────────
+          // ── Confetti for high scores ──────────────────────────────
           if (isHighScore) ..._buildConfettiParticles(),
         ],
       ),
@@ -189,11 +259,10 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
   }
 
   // ── Owner Avatar ─────────────────────────────────────────────────────
-  Widget _buildOwnerAvatar() {
+  Widget _buildOwnerAvatar(BadgeInfo badge) {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Blurred background glow
         Container(
           width: 100,
           height: 100,
@@ -201,49 +270,45 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: _mockBadgeColor.withValues(alpha: 0.3),
+                color: badge.color.withValues(alpha: 0.3),
                 blurRadius: 40,
                 spreadRadius: 10,
               ),
             ],
           ),
         ),
-        // Emoji
-        const Text(
-          _mockOwnerEmoji,
-          style: TextStyle(fontSize: 72),
+        Text(
+          _owner?.avatarEmoji ?? '😊',
+          style: const TextStyle(fontSize: 72),
         ),
       ],
     );
   }
 
   // ── Percentage Ring ──────────────────────────────────────────────────
-  Widget _buildPercentageRing() {
+  Widget _buildPercentageRing(BadgeInfo badge) {
     return SizedBox(
       width: 180,
       height: 180,
       child: AnimatedBuilder(
         animation: _ringAnimation,
         builder: (context, child) {
-          final currentPercentage =
-              (_ringAnimation.value * 100).round();
+          final currentPercentage = (_ringAnimation.value * 100).round();
           return Stack(
             alignment: Alignment.center,
             children: [
-              // Ring
               SizedBox(
                 width: 180,
                 height: 180,
                 child: CustomPaint(
                   painter: _PercentageRingPainter(
                     progress: _ringAnimation.value,
-                    color: _mockBadgeColor,
+                    color: badge.color,
                     backgroundColor: AppColors.surfaceAlt,
                     strokeWidth: 12,
                   ),
                 ),
               ),
-              // Percentage text
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -265,33 +330,39 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
   }
 
   // ── Badge Pill ───────────────────────────────────────────────────────
-  Widget _buildBadgePill() {
+  Widget _buildBadgePill(BadgeInfo badge) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
-        color: _mockBadgeColor.withValues(alpha: 0.15),
+        color: badge.color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: _mockBadgeColor.withValues(alpha: 0.3),
+          color: badge.color.withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
       child: Text(
-        '$_mockBadgeName $_mockBadgeEmoji',
+        '${badge.nameTr} ${badge.emoji}',
         style: GoogleFonts.outfit(
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          color: _mockBadgeColor,
+          color: badge.color,
         ),
       ),
     );
   }
 
   // ── Share Story Button ───────────────────────────────────────────────
-  Widget _buildShareStoryButton() {
+  Widget _buildShareStoryButton(QuizSession session, BadgeInfo badge) {
     return GestureDetector(
       onTap: () {
-        // TODO(share): Implement story sharing
+        final ownerName = _owner?.displayName ?? '';
+        final username = _owner?.username ?? '';
+        Share.share(
+          '${badge.emoji} ${badge.nameTr}! '
+          '$ownerName\'i %${session.percentage} tanıyorum! '
+          'Sen de dene: enlerapp.com/$username',
+        );
       },
       child: Container(
         width: double.infinity,
@@ -323,9 +394,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
   // ── Create Button ────────────────────────────────────────────────────
   Widget _buildCreateButton() {
     return GestureDetector(
-      onTap: () {
-        // TODO(navigation): Navigate to profile creation flow
-      },
+      onTap: () => context.go(AppRoutes.auth),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -347,7 +416,11 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
   }
 
   // ── Share Card Preview ───────────────────────────────────────────────
-  Widget _buildShareCardPreview() {
+  Widget _buildShareCardPreview(QuizSession session, BadgeInfo badge) {
+    final ownerName = _owner?.displayName ?? '';
+    final ownerEmoji = _owner?.avatarEmoji ?? '😊';
+    final username = _owner?.username ?? '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -384,10 +457,10 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
           ),
           child: Column(
             children: [
-              const Text(_mockOwnerEmoji, style: TextStyle(fontSize: 40)),
+              Text(ownerEmoji, style: const TextStyle(fontSize: 40)),
               const SizedBox(height: 8),
               Text(
-                '$_mockOwnerName\'i ne kadar tanıyorum?',
+                '$ownerName\'i ne kadar tanıyorum?',
                 style: GoogleFonts.outfit(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -396,7 +469,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                '%$_mockPercentage',
+                '%${session.percentage}',
                 style: GoogleFonts.outfit(
                   fontSize: 40,
                   fontWeight: FontWeight.w800,
@@ -404,7 +477,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                 ),
               ),
               Text(
-                '$_mockBadgeName $_mockBadgeEmoji',
+                '${badge.nameTr} ${badge.emoji}',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -420,7 +493,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'enlerapp.com/$_mockUsername',
+                  'enlerapp.com/$username',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     color: AppColors.textOnPrimary.withValues(alpha: 0.9),
@@ -455,7 +528,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen>
               .moveY(
                 begin: -30,
                 end: MediaQuery.sizeOf(context).height + 30,
-                duration: Duration(milliseconds: 2500 + random.nextInt(1500)),
+                duration:
+                    Duration(milliseconds: 2500 + random.nextInt(1500)),
                 delay: Duration(milliseconds: delay),
                 curve: Curves.linear,
               )

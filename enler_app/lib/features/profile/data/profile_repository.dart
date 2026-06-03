@@ -45,6 +45,18 @@ class ProfileRepository {
     return Profile.fromJson(_snakeToCamel(response));
   }
 
+  /// Fetches a profile by its primary key [id].
+  Future<Profile?> getProfileById(String id) async {
+    final response = await _client
+        .from('profiles')
+        .select(_profileColumns)
+        .eq('id', id)
+        .maybeSingle();
+
+    if (response == null) return null;
+    return Profile.fromJson(_snakeToCamel(response));
+  }
+
   /// Fetches a profile by its unique username.
   Future<Profile?> getProfileByUsername(String username) async {
     final response = await _client
