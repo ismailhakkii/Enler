@@ -7,6 +7,11 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../profile/data/profile_repository.dart';
+import '../../quiz/data/quiz_repository.dart';
+import '../../profile/domain/profile_model.dart';
+import '../../quiz/domain/quiz_session_model.dart';
+import '../../../shared/models/badge_info.dart';
 
 /// Main home screen shown after login.
 ///
@@ -20,25 +25,38 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  // ── Mock Data ──────────────────────────────────────────────────────────
-  // TODO(riverpod): Replace with ref.watch(currentUserProvider)
-  static const _mockDisplayName = 'Ahmet';
-  static const _mockAvatarEmoji = '😎';
-  static const _mockUsername = 'ahmet_yilmaz';
-  static const _mockQuestionCount = 7;
-  static const _mockTotalPlays = 24;
+  Profile? _profile;
+  List<QuizSession> _recentSessions = [];
 
-  // TODO(riverpod): Replace with ref.watch(recentQuizTakersProvider)
-  static final List<_MockRecentPlayer> _mockRecentPlayers = [
-    _MockRecentPlayer('Elif', '💪', 87, '2 dk önce'),
-    _MockRecentPlayer('Can', '😄', 60, '15 dk önce'),
-    _MockRecentPlayer('Zeynep', '🕵️', 100, '1 saat önce'),
-    _MockRecentPlayer('Mert', '😅', 30, '3 saat önce'),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final profile = await ref.read(currentProfileProvider.future);
+
+      List<QuizSession> sessions = [];
+      if (profile != null) {
+        final quizRepo = ref.read(quizRepositoryProvider);
+        sessions = await quizRepo.getRecentSessions(profile.id, limit: 10);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _recentSessions = sessions;
+      });
+    } catch (_) {
+      // Silently handle errors on initial load
+    }
+  }
 
   Future<void> _onRefresh() async {
-    // TODO(riverpod): ref.invalidate(homeDataProvider)
-    await Future<void>.delayed(const Duration(seconds: 1));
+    ref.invalidate(currentProfileProvider);
+    await _loadData();
   }
 
   @override
@@ -80,10 +98,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Greeting ─────────────────────────────────────────────────────────
   Widget _buildGreeting() {
+    final name = _profile?.displayName ?? 'Kullanıcı';
+    final emoji = _profile?.avatarEmoji ?? '😊';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Text(
-        'Merhaba, $_mockDisplayName! $_mockAvatarEmoji',
+        'Merhaba, $name! $emoji',
         style: GoogleFonts.outfit(
           fontSize: 28,
           fontWeight: FontWeight.w700,
@@ -116,14 +136,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           // Large emoji avatar
           Text(
-            _mockAvatarEmoji,
+            _profile?.avatarEmoji ?? '😊',
             style: const TextStyle(fontSize: 64),
           ),
           const SizedBox(height: 12),
 
           // Username
           Text(
-            '@$_mockUsername',
+            '@${_profile?.username ?? 'user'}',
             style: GoogleFonts.inter(
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -137,7 +157,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                '$_mockQuestionCount soru',
+                '${_profile?.questionCount ?? 0} soru',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -155,7 +175,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
               Text(
-                '$_mockTotalPlays kişi çözdü',
+                '${_profile?.totalPlays ?? 0} kişi çözdü',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -183,7 +203,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Recent Quiz Takers ───────────────────────────────────────────────
   Widget _buildRecentSection() {
-    final hasPlayers = _mockRecentPlayers.isNotEmpty;
+    final hasPlayers = _recentSessions.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -204,11 +224,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               height: 110,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _mockRecentPlayers.length,
+                itemCount: _recentSessions.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
-                  final player = _mockRecentPlayers[index];
-                  return _RecentPlayerCard(player: player);
+                  final session = _recentSessions[index];
+                  final badge = BadgeInfo.fromPercentage(session.percentage);
+                  return _RecentPlayerCard(
+                    name: session.playerName,
+                    badgeEmoji: badge.emoji,
+                    percentage: session.percentage,
+                    timeAgo: _formatTimeAgo(session.completedAt ?? session.createdAt),
+                  );
                 },
               ),
             )
@@ -264,12 +290,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          if (_mockQuestionCount < AppConstants.maxQuestions)
+          if ((_profile?.questionCount ?? 0) < AppConstants.maxQuestions)
             _ImprovementCard(
               emoji: '➕',
               title: 'Yeni soru ekle',
               subtitle:
-                  '$_mockQuestionCount/${AppConstants.maxQuestions} soru eklendi',
+                  '${_profile?.questionCount ?? 0}/${AppConstants.maxQuestions} soru eklendi',
               onTap: () => context.push(AppRoutes.questionAdd),
             ),
           const SizedBox(height: 8),
@@ -285,6 +311,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .animate()
         .fadeIn(duration: 500.ms, delay: 300.ms)
         .slideY(begin: 0.05, end: 0, duration: 500.ms, delay: 300.ms);
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'şimdi';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} dk önce';
+    if (diff.inHours < 24) return '${diff.inHours} saat önce';
+    return '${diff.inDays} gün önce';
   }
 }
 
@@ -329,9 +363,17 @@ class _GradientButton extends StatelessWidget {
 
 /// Card showing a recent quiz taker with badge and percentage.
 class _RecentPlayerCard extends StatelessWidget {
-  const _RecentPlayerCard({required this.player});
+  const _RecentPlayerCard({
+    required this.name,
+    required this.badgeEmoji,
+    required this.percentage,
+    required this.timeAgo,
+  });
 
-  final _MockRecentPlayer player;
+  final String name;
+  final String badgeEmoji;
+  final int percentage;
+  final String timeAgo;
 
   @override
   Widget build(BuildContext context) {
@@ -352,10 +394,10 @@ class _RecentPlayerCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(player.badgeEmoji, style: const TextStyle(fontSize: 24)),
+          Text(badgeEmoji, style: const TextStyle(fontSize: 24)),
           const SizedBox(height: 4),
           Text(
-            player.name,
+            name,
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -365,7 +407,7 @@ class _RecentPlayerCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '%${player.percentage}',
+            '%$percentage',
             style: GoogleFonts.outfit(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -373,7 +415,7 @@ class _RecentPlayerCard extends StatelessWidget {
             ),
           ),
           Text(
-            player.timeAgo,
+            timeAgo,
             style: GoogleFonts.inter(
               fontSize: 10,
               color: AppColors.textTertiary,
@@ -455,13 +497,3 @@ class _ImprovementCard extends StatelessWidget {
   }
 }
 
-// ── Mock Data Model ──────────────────────────────────────────────────────
-
-class _MockRecentPlayer {
-  const _MockRecentPlayer(this.name, this.badgeEmoji, this.percentage, this.timeAgo);
-
-  final String name;
-  final String badgeEmoji;
-  final int percentage;
-  final String timeAgo;
-}
