@@ -53,6 +53,15 @@ class AuthRepository {
     return response;
   }
 
+  /// Signs in anonymously (guest mode).
+  ///
+  /// Creates a temporary anonymous session so the user can still
+  /// interact with Supabase (create profile, add questions) without
+  /// providing credentials. They can link a real provider later.
+  Future<AuthResponse> signInAnonymously() async {
+    return await _client.auth.signInAnonymously();
+  }
+
   /// Signs the current user out and clears the local session.
   Future<void> signOut() async {
     await _client.auth.signOut();

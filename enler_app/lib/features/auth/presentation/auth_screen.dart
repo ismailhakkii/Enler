@@ -171,8 +171,22 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     width: double.infinity,
                     height: 52,
                     child: OutlinedButton(
-                      onPressed: _isLoading ? null : () {
-                        context.go(AppRoutes.profileCreate);
+                      onPressed: _isLoading ? null : () async {
+                        setState(() => _isLoading = true);
+                        try {
+                          final authRepo = ref.read(authRepositoryProvider);
+                          await authRepo.signInAnonymously();
+                          if (!mounted) return;
+                          context.go(AppRoutes.profileCreate);
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Giriş yapılamadı: $e')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _isLoading = false);
+                        }
                       },
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: AppColors.primary),
