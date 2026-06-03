@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../auth/data/auth_repository.dart';
+import '../../profile/data/profile_repository.dart';
 
 /// Animated splash screen shown during app initialization.
 ///
@@ -30,20 +32,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
     if (!mounted) return;
 
-    // TODO: Replace with actual auth check via Riverpod provider
-    // final authState = ref.read(authStateProvider);
-    // final hasProfile = ref.read(profileExistsProvider);
-    const isLoggedIn = false; // TODO: ref.read(authStateProvider).isLoggedIn
-    const hasProfile = false; // TODO: ref.read(profileExistsProvider)
+    final user = ref.read(currentUserProvider);
+
+    if (user == null) {
+      if (mounted) context.go(AppRoutes.auth);
+      return;
+    }
+
+    // User is logged in — check if profile exists
+    final profileRepo = ref.read(profileRepositoryProvider);
+    final profile = await profileRepo.getProfileByUserId(user.id);
 
     if (!mounted) return;
 
-    if (isLoggedIn && hasProfile) {
+    if (profile != null) {
       context.go(AppRoutes.home);
-    } else if (isLoggedIn && !hasProfile) {
-      context.go(AppRoutes.profileCreate);
     } else {
-      context.go(AppRoutes.auth);
+      context.go(AppRoutes.profileCreate);
     }
   }
 

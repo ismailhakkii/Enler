@@ -7,6 +7,9 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/supabase_service.dart';
+import '../../auth/data/auth_repository.dart';
+import '../../profile/data/profile_repository.dart';
 
 /// Screen where users fill in their favorite answers for quiz categories.
 ///
@@ -62,10 +65,51 @@ class _QuestionAddScreenState extends ConsumerState<QuestionAddScreen> {
     );
   }
 
-  void _onFinish() {
-    // TODO: Save all answers via Riverpod provider
-    // ref.read(questionControllerProvider.notifier).saveAnswers(_answers);
-    context.go(AppRoutes.home);
+  bool _isSaving = false;
+
+  Future<void> _onFinish() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) {
+        if (mounted) context.go(AppRoutes.home);
+        return;
+      }
+
+      final profileRepo = ref.read(profileRepositoryProvider);
+      final profile = await profileRepo.getProfileByUserId(user.id);
+      if (profile == null || !mounted) return;
+
+      // Save each answer as a question in Supabase
+      for (final entry in _answers.entries) {
+        final category = _categories[entry.key];
+        final answer = entry.value;
+
+        await profileRepo.createQuestion({
+          'profile_id': profile.id,
+          'category': category.question,
+          'question_text': category.question,
+          'correct_answer': answer.correctAnswer,
+          'wrong_answers': answer.wrongAnswers,
+          'order_index': entry.key,
+          'is_ai_generated': true,
+        });
+      }
+
+      ref.invalidate(currentProfileProvider);
+
+      if (mounted) context.go(AppRoutes.home);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sorular kaydedilemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
@@ -366,25 +410,38 @@ class _AnswerBottomSheetState extends State<_AnswerBottomSheet> {
 
     setState(() => _isGenerating = true);
 
-    // TODO: Call AI generation via Riverpod provider
-    // final wrongAnswers = await ref.read(
-    //   generateWrongAnswersProvider(
-    //     category: widget.category.question,
-    //     correctAnswer: _correctController.text,
-    //   ).future,
-    // );
-    await Future<void>.delayed(const Duration(seconds: 1));
-    // Simulated AI results
-    final wrongAnswers = ['Seçenek A', 'Seçenek B', 'Seçenek C'];
+    try {
+      // Call the generate-wrong-answers Edge Function
+      final response = await SupabaseService.client.functions.invoke(
+        'generate-wrong-answers',
+        body: {
+          'category': widget.category.question,
+          'correct_answer': _correctController.text.trim(),
+          'language': 'tr',
+        },
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _isGenerating = false;
-      for (int i = 0; i < 3 && i < wrongAnswers.length; i++) {
-        _wrongControllers[i].text = wrongAnswers[i];
-      }
-    });
+      final data = response.data as Map<String, dynamic>?;
+      final wrongAnswers = (data?['wrong_answers'] as List?)?.cast<String>() ?? ['Seçenek A', 'Seçenek B', 'Seçenek C'];
+
+      setState(() {
+        _isGenerating = false;
+        for (int i = 0; i < 3 && i < wrongAnswers.length; i++) {
+          _wrongControllers[i].text = wrongAnswers[i];
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // Fallback: simple placeholders
+      setState(() {
+        _isGenerating = false;
+        _wrongControllers[0].text = 'Seçenek A';
+        _wrongControllers[1].text = 'Seçenek B';
+        _wrongControllers[2].text = 'Seçenek C';
+      });
+    }
   }
 
   void _onSave() {

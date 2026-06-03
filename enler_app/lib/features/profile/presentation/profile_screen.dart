@@ -6,6 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../data/profile_repository.dart';
+import '../domain/profile_model.dart';
+import '../domain/question_model.dart';
 
 /// Profile view screen (Tab 2).
 ///
@@ -19,27 +22,31 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  // ── Mock Data ──────────────────────────────────────────────────────────
-  // TODO(riverpod): Replace with ref.watch(currentProfileProvider)
-  static const _mockDisplayName = 'Ahmet Yılmaz';
-  static const _mockUsername = 'ahmet_yilmaz';
-  static const _mockAvatarEmoji = '😎';
-  static const _mockQuestionCount = 7;
-  static const _mockTotalPlays = 24;
-  static const _mockShareCount = 12;
-
-  // TODO(riverpod): Replace with ref.watch(userQuestionsProvider)
-  static final List<_MockQuestion> _mockQuestions = [
-    _MockQuestion('🎨', 'En sevdiğin renk?', 'Mavi'),
-    _MockQuestion('🍕', 'En sevdiğin yemek?', 'Pizza'),
-    _MockQuestion('🎬', 'En sevdiğin film?', 'Inception'),
-    _MockQuestion('🎵', 'En sevdiğin müzik?', 'Rock'),
-    _MockQuestion('⚽', 'En sevdiğin spor?', 'Futbol'),
-    _MockQuestion('📚', 'En sevdiğin kitap?', 'Suç ve Ceza'),
-    _MockQuestion('🌍', 'En sevdiğin yer?', 'İstanbul'),
-  ];
-
+  Profile? _profile;
+  List<Question> _questions = [];
   bool _showAnswers = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final profile = await ref.read(currentProfileProvider.future);
+      List<Question> questions = [];
+      if (profile != null) {
+        final repo = ref.read(profileRepositoryProvider);
+        questions = await repo.getQuestionsByProfileId(profile.id);
+      }
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _questions = questions;
+      });
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +76,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) => _buildQuestionTile(index),
-              childCount: _mockQuestions.length,
+              childCount: _questions.length,
             ),
           ),
 
@@ -102,17 +109,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               shape: BoxShape.circle,
               color: AppColors.surface,
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                _mockAvatarEmoji,
-                style: TextStyle(fontSize: 48),
+                _profile?.avatarEmoji ?? '😊',
+                style: const TextStyle(fontSize: 48),
               ),
             ),
           ),
         ),
         const SizedBox(height: 12),
         Text(
-          _mockDisplayName,
+          _profile?.displayName ?? '',
           style: GoogleFonts.outfit(
             fontSize: 24,
             fontWeight: FontWeight.w700,
@@ -121,7 +128,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          '@$_mockUsername',
+          '@${_profile?.username ?? ''}',
           style: GoogleFonts.inter(
             fontSize: 15,
             color: AppColors.textSecondary,
@@ -142,7 +149,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Expanded(
             child: _StatCard(
-              value: '$_mockQuestionCount',
+              value: '${_profile?.questionCount ?? 0}',
               label: 'Soru',
               icon: Icons.quiz_outlined,
             ),
@@ -150,7 +157,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _StatCard(
-              value: '$_mockTotalPlays',
+              value: '${_profile?.totalPlays ?? 0}',
               label: 'Çözen',
               icon: Icons.people_outline_rounded,
             ),
@@ -158,7 +165,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _StatCard(
-              value: '$_mockShareCount',
+              value: '${_profile?.shareCount ?? 0}',
               label: 'Paylaşım',
               icon: Icons.share_outlined,
             ),
@@ -302,10 +309,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   // ── Question Tile ────────────────────────────────────────────────────
   Widget _buildQuestionTile(int index) {
-    final question = _mockQuestions[index];
+    final question = _questions[index];
+    // Extract emoji from category name or use default
+    final emoji = question.category.contains('?') ? '❓' : '💬';
 
     return Dismissible(
-      key: ValueKey('question_$index'),
+      key: ValueKey('question_${question.id}'),
       direction: DismissDirection.endToStart,
       background: Container(
         margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
@@ -317,9 +326,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         child: const Icon(Icons.delete_outline, color: AppColors.textOnPrimary),
       ),
-      onDismissed: (_) {
-        // TODO(riverpod): ref.read(questionsProvider.notifier).delete(questionId)
-        setState(() => _mockQuestions.removeAt(index));
+      onDismissed: (_) async {
+        final q = _questions.removeAt(index);
+        setState(() {});
+        try {
+          final repo = ref.read(profileRepositoryProvider);
+          await repo.deleteQuestion(q.id);
+        } catch (_) {}
       },
       child: Container(
         margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
@@ -337,14 +350,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         child: Row(
           children: [
-            Text(question.emoji, style: const TextStyle(fontSize: 28)),
+            Text(emoji, style: const TextStyle(fontSize: 28)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    question.category,
+                    question.questionText,
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -362,7 +375,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                     ),
                     secondChild: Text(
-                      question.answer,
+                      question.correctAnswer,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textSecondary,
@@ -408,7 +421,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'enlerapp.com/$_mockUsername',
+              'enlerapp.com/${_profile?.username ?? ''}',
               style: GoogleFonts.inter(
                 fontSize: 13,
                 color: AppColors.textOnPrimary.withValues(alpha: 0.8),
@@ -503,12 +516,3 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ── Mock Data Model ──────────────────────────────────────────────────────
-
-class _MockQuestion {
-  const _MockQuestion(this.emoji, this.category, this.answer);
-
-  final String emoji;
-  final String category;
-  final String answer;
-}

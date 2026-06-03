@@ -4,30 +4,59 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../profile/data/profile_repository.dart';
+import '../../quiz/data/quiz_repository.dart';
+import '../../quiz/domain/quiz_session_model.dart';
+import '../../../shared/models/badge_info.dart';
 
 /// Leaderboard screen (Tab 3).
 ///
 /// Shows "Seni En İyi Tanıyanlar 🏆" with a top-3 podium display
 /// and a scrollable ranked list below.
-class LeaderboardScreen extends ConsumerWidget {
+class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
 
-  // ── Mock Data ──────────────────────────────────────────────────────────
-  // TODO(riverpod): Replace with ref.watch(leaderboardProvider)
-  static final List<_MockLeaderboardEntry> _mockEntries = [
-    _MockLeaderboardEntry('Zeynep', '🕵️', 'Stalker', 100, '1 saat önce', AppColors.badgeSoulmate),
-    _MockLeaderboardEntry('Elif', '💪', 'Kanka', 87, '2 dk önce', AppColors.badgeBestFriend),
-    _MockLeaderboardEntry('Mert', '🙌', 'Yakın Dost', 75, '5 saat önce', AppColors.badgeCloseFriend),
-    _MockLeaderboardEntry('Can', '😄', 'Arkadaş', 60, '1 gün önce', AppColors.badgeFriend),
-    _MockLeaderboardEntry('Ayşe', '😄', 'Arkadaş', 55, '2 gün önce', AppColors.badgeFriend),
-    _MockLeaderboardEntry('Ali', '😅', 'Tanıdık', 40, '3 gün önce', AppColors.badgeAcquaintance),
-    _MockLeaderboardEntry('Deniz', '😅', 'Tanıdık', 35, '4 gün önce', AppColors.badgeAcquaintance),
-    _MockLeaderboardEntry('Selin', '🤔', 'Yabancı', 20, '1 hafta önce', AppColors.badgeStranger),
-  ];
+  @override
+  ConsumerState<LeaderboardScreen> createState() => _LeaderboardScreenState();
+}
+
+class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
+  List<QuizSession> _entries = [];
+  bool _isLoading = true;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hasEntries = _mockEntries.isNotEmpty;
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final profile = await ref.read(currentProfileProvider.future);
+      if (profile == null) return;
+      final quizRepo = ref.read(quizRepositoryProvider);
+      final sessions = await quizRepo.getLeaderboard(profile.id);
+      if (!mounted) return;
+      setState(() {
+        _entries = sessions;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'şimdi';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} dk önce';
+    if (diff.inHours < 24) return '${diff.inHours} saat önce';
+    return '${diff.inDays} gün önce';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEntries = _entries.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -61,7 +90,7 @@ class LeaderboardScreen extends ConsumerWidget {
             ),
 
             // ── Remaining list ─────────────────────────────────────
-            if (_mockEntries.length > 3)
+            if (_entries.length > 3)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
@@ -76,15 +105,15 @@ class LeaderboardScreen extends ConsumerWidget {
                 ).animate().fadeIn(duration: 500.ms, delay: 400.ms),
               ),
 
-            if (_mockEntries.length > 3)
+            if (_entries.length > 3)
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final realIndex = index + 3;
-                    if (realIndex >= _mockEntries.length) return null;
+                    if (realIndex >= _entries.length) return null;
                     return _buildRankTile(realIndex);
                   },
-                  childCount: _mockEntries.length - 3,
+                  childCount: _entries.length - 3,
                 ),
               ),
           ] else
@@ -100,9 +129,9 @@ class LeaderboardScreen extends ConsumerWidget {
 
   // ── Podium ───────────────────────────────────────────────────────────
   Widget _buildPodium() {
-    final first = _mockEntries.isNotEmpty ? _mockEntries[0] : null;
-    final second = _mockEntries.length > 1 ? _mockEntries[1] : null;
-    final third = _mockEntries.length > 2 ? _mockEntries[2] : null;
+    final first = _entries.isNotEmpty ? _entries[0] : null;
+    final second = _entries.length > 1 ? _entries[1] : null;
+    final third = _entries.length > 2 ? _entries[2] : null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -113,7 +142,7 @@ class LeaderboardScreen extends ConsumerWidget {
           if (second != null)
             Expanded(
               child: _PodiumItem(
-                entry: second,
+                session: second,
                 rank: 2,
                 accentColor: const Color(0xFFC0C0C0), // Silver
                 height: 120,
@@ -128,7 +157,7 @@ class LeaderboardScreen extends ConsumerWidget {
           if (first != null)
             Expanded(
               child: _PodiumItem(
-                entry: first,
+                session: first,
                 rank: 1,
                 accentColor: AppColors.reward, // Gold
                 height: 150,
@@ -143,7 +172,7 @@ class LeaderboardScreen extends ConsumerWidget {
           if (third != null)
             Expanded(
               child: _PodiumItem(
-                entry: third,
+                session: third,
                 rank: 3,
                 accentColor: const Color(0xFFCD7F32), // Bronze
                 height: 100,
@@ -161,8 +190,10 @@ class LeaderboardScreen extends ConsumerWidget {
 
   // ── Rank Tile ────────────────────────────────────────────────────────
   Widget _buildRankTile(int index) {
-    final entry = _mockEntries[index];
+    final session = _entries[index];
     final rank = index + 1;
+    final badge = BadgeInfo.fromPercentage(session.percentage);
+    final timeAgo = _formatTimeAgo(session.completedAt ?? session.createdAt);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
@@ -200,7 +231,7 @@ class LeaderboardScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  entry.name,
+                  session.playerName,
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -210,14 +241,14 @@ class LeaderboardScreen extends ConsumerWidget {
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    Text(entry.badgeEmoji,
+                    Text(badge.emoji,
                         style: const TextStyle(fontSize: 14)),
                     const SizedBox(width: 4),
                     Text(
-                      entry.badgeName,
+                      badge.nameTr,
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: entry.badgeColor,
+                        color: badge.color,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -232,11 +263,11 @@ class LeaderboardScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '%${entry.percentage}',
+                '%${session.percentage}',
                 style: GoogleFonts.outfit(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: entry.badgeColor,
+                  color: badge.color,
                 ),
               ),
               const SizedBox(height: 4),
@@ -246,16 +277,16 @@ class LeaderboardScreen extends ConsumerWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
-                    value: entry.percentage / 100,
+                    value: session.percentage / 100,
                     backgroundColor: AppColors.surfaceAlt,
                     valueColor:
-                        AlwaysStoppedAnimation<Color>(entry.badgeColor),
+                        AlwaysStoppedAnimation<Color>(badge.color),
                   ),
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                entry.timeAgo,
+                timeAgo,
                 style: GoogleFonts.inter(
                   fontSize: 10,
                   color: AppColors.textTertiary,
@@ -335,27 +366,28 @@ class LeaderboardScreen extends ConsumerWidget {
 /// A single podium item for top 3 display.
 class _PodiumItem extends StatelessWidget {
   const _PodiumItem({
-    required this.entry,
+    required this.session,
     required this.rank,
     required this.accentColor,
     required this.height,
   });
 
-  final _MockLeaderboardEntry entry;
+  final QuizSession session;
   final int rank;
   final Color accentColor;
   final double height;
 
   @override
   Widget build(BuildContext context) {
+    final badge = BadgeInfo.fromPercentage(session.percentage);
     return Column(
       children: [
         // Badge emoji
-        Text(entry.badgeEmoji, style: const TextStyle(fontSize: 28)),
+        Text(badge.emoji, style: const TextStyle(fontSize: 28)),
         const SizedBox(height: 4),
         // Name
         Text(
-          entry.name,
+          session.playerName,
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -365,7 +397,7 @@ class _PodiumItem extends StatelessWidget {
         ),
         // Percentage
         Text(
-          '%${entry.percentage}',
+          '%${session.percentage}',
           style: GoogleFonts.outfit(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -400,22 +432,3 @@ class _PodiumItem extends StatelessWidget {
   }
 }
 
-// ── Mock Data Model ──────────────────────────────────────────────────────
-
-class _MockLeaderboardEntry {
-  const _MockLeaderboardEntry(
-    this.name,
-    this.badgeEmoji,
-    this.badgeName,
-    this.percentage,
-    this.timeAgo,
-    this.badgeColor,
-  );
-
-  final String name;
-  final String badgeEmoji;
-  final String badgeName;
-  final int percentage;
-  final String timeAgo;
-  final Color badgeColor;
-}

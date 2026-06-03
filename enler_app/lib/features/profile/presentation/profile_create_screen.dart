@@ -8,6 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../auth/data/auth_repository.dart';
+import '../data/profile_repository.dart';
 
 /// Profile creation onboarding screen (Step 1 of the entry flow).
 ///
@@ -116,18 +118,22 @@ class _ProfileCreateScreenState extends ConsumerState<ProfileCreateScreen> {
     if (!mounted) return;
     setState(() => _isCheckingUsername = true);
 
-    // TODO: Replace with actual Supabase username check
-    // final available = await ref.read(
-    //   checkUsernameProvider(username).future,
-    // );
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    final available = true; // Simulated result
+    try {
+      final repo = ref.read(profileRepositoryProvider);
+      final available = await repo.isUsernameAvailable(username.toLowerCase());
 
-    if (!mounted) return;
-    setState(() {
-      _isCheckingUsername = false;
-      _isUsernameAvailable = available;
-    });
+      if (!mounted) return;
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = available;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = null;
+      });
+    }
   }
 
   void _toggleEmoji(String emoji) {
@@ -149,19 +155,46 @@ class _ProfileCreateScreenState extends ConsumerState<ProfileCreateScreen> {
     return _selectedEmojis.isNotEmpty;
   }
 
-  void _onContinue() {
+  bool _isSaving = false;
+
+  Future<void> _onContinue() async {
     if (_currentStep == 0) {
       setState(() => _currentStep = 1);
       return;
     }
 
-    // TODO: Save profile via Riverpod provider
-    // ref.read(profileControllerProvider.notifier).createProfile(
-    //   username: _usernameController.text,
-    //   displayName: _displayNameController.text,
-    //   emojiAvatar: _selectedEmojis.join(),
-    // );
-    context.go(AppRoutes.questionAdd);
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) {
+        // Guest mode — just continue without saving to DB
+        if (mounted) context.go(AppRoutes.questionAdd);
+        return;
+      }
+
+      final repo = ref.read(profileRepositoryProvider);
+      await repo.createProfile({
+        'user_id': user.id,
+        'username': _usernameController.text.toLowerCase().trim(),
+        'display_name': _displayNameController.text.trim(),
+        'avatar_emoji': _selectedEmojis.join(),
+      });
+
+      // Invalidate the profile cache
+      ref.invalidate(currentProfileProvider);
+
+      if (mounted) context.go(AppRoutes.questionAdd);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Profil oluşturulamadı: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
